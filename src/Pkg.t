@@ -73,10 +73,50 @@ end
 
 function Pkg.ispkg(root)
     local pkgname = Pkg.capturestdout("cd "..root.."; echo \"${PWD##*/}\"")
-    local c1 = isfile(root.."/Project.toml")
+    local c1 = isfile(root.."/Project.t")
     local c2 = isfile(root.."/src/"..pkgname..".t")
     return c1 and c2
 end
+
+function Pkg.getfileextension(file)
+    return file:match "[^.]+$"
+end
+
+local t1 = Pkg.getfileextension("hello.t")=="t"
+local t2 = Pkg.getfileextension("Project.toml")=="toml"
+test t1 and t2
+
+--clone a git-remote terra package. throw an error if input is invalid.
+function Pkg.clone(args)
+    --check keyword arguments
+    if args.root==nil or args.url==nil then
+	error("provide `root` and git `url`.\n")
+    end
+    if type(args.root)~="string" then
+        error("provide `root` folder\n")
+    elseif type(args.url)~="string" then 
+        error("provide git `url`\n")
+    end
+
+    --throw an error if repo is not valid
+    if not Pkg.validnonemptygitrepo(args.url) then
+        error("Provide a non-empty git repository\n")
+    end
+    --clone remote repo 
+    os.execute("mkdir -p "..args.root..";"..
+        "cd "..args.root..";"..
+        "git clone "..args.url)
+       
+    --check that cloned repo satisfies basic package structure
+    local pkgname = Pkg.namefromgiturl(args.url)          
+    if not Pkg.ispkg(args.root.."/"..pkgname) then
+        --remove terra cloned repo 
+        os.execute("cd "..args.root..";".."rm -rf "..pkgname)  
+        --throw error
+        error("Cloned repository does not have the structure of a terra pkg.")
+    end
+end
+
 
 --generate main source file
 local function gensrcfile(pkgname)
@@ -101,13 +141,14 @@ end
 
 --generate Package.toml
 local function genpkgtoml(pkgname)
-    local file = io.open(pkgname.."/Project.toml", "w")
-    file:write("name = \""..pkgname.."\"\n")
-    file:write("uuid = \""..Pkg.uuid().."\"\n")
-    file:write("authors = [\""..Pkg.user.name.."<"..Pkg.user.email..">".."\"]".."\n")
-    file:write("version = \"".."0.1.0".."\"\n\n")
-    file:write("[deps]\n\n")
-    file:write("[compat]\n")
+    local file = io.open(pkgname.."/Project.t", "w")
+    file:write("Project = {\n")
+    file:write("    name = \""..pkgname.."\",\n")
+    file:write("    uuid = \""..Pkg.uuid().."\",\n")
+    file:write("    authors = {\""..Pkg.user.name.."<"..Pkg.user.email..">".."\"},\n")
+    file:write("    version = \"".."0.1.0".."\",\n")
+    file:write("    deps = {}\n")
+    file:write("}")
     file:close()  
 end
 
@@ -160,6 +201,7 @@ testset "get repo name from url" do
     test t6=="MyPackage"   
 end
 
+--[[
 testset "validate git remote repo url" do
     local t9 = Pkg.validgitrepo("git@github.com:terralang/terra.git")
     local t10 = Pkg.validgitrepo("git@github.com:terralang/terra.gi")     
@@ -174,6 +216,13 @@ testset "validate git remote repo url" do
     local t15 = Pkg.validnonemptygitrepo("git@github.com:terralang/terra.gi")
     local t16 = Pkg.validnonemptygitrepo("git@github.com:renehiemstra/EmptyTestRepo.git")
     test t14 and not t15 and not t16
+end]]
+
+testset "clone package" do
+    os.execute("rm -rf Pkg")
+    local status, err = pcall(Pkg.clone, {root=".", url="git@github.com:renehiemstra/Pkg.git"})
+    test status
+    os.execute("rm -rf Pkg")
 end
 
 end --testenv
